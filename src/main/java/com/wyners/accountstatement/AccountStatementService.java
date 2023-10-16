@@ -18,10 +18,11 @@ import org.apache.commons.csv.CSVRecord;
 import org.dhatim.fastexcel.Workbook;
 import org.dhatim.fastexcel.Worksheet;
 import org.springframework.stereotype.Service;
+import java.util.Date;
 
 @Service
 public class AccountStatementService {
-    private String[] HEADERS_ORIGINAL = { "Date", "Amount", "Account Number", "Empty", "Transaction Type",
+    String[] HEADERS_ORIGINAL = { "Date", "Amount", "Account Number", "Empty", "Transaction Type",
             "Transaction Details",
             "Balance", "Category", "Merchant Name" };
     private String[] HEADERS_NEW = { "Date", "Transaction Type", "Transaction Details", "Debit", "Credit", "Category",
@@ -33,28 +34,9 @@ public class AccountStatementService {
                 .setSkipHeaderRecord(true)
                 .build();
 
-        Iterable<CSVRecord> csvRecords;
         try {
-            csvRecords = csvFormat
-                    .parse(new FileReader(transactionsFilePath.toFile(), StandardCharsets.UTF_8));
-            List<AccountStatement> accountStatements = new ArrayList<>();
-
-            SimpleDateFormat dateFormat = new SimpleDateFormat("dd MMM yy", Locale.ENGLISH);
-
-            for (CSVRecord csvRecord : csvRecords) {
-                BigDecimal amountBD = new BigDecimal(csvRecord.get("Amount"));
-                AccountStatement accountStatement = new AccountStatement(dateFormat.parse(csvRecord.get("Date")),
-                        csvRecord.get("Transaction Type"),
-                        csvRecord.get("Transaction Details"),
-                        (amountBD.signum() < 0 ? amountBD : BigDecimal.ZERO),
-                        (amountBD.signum() > 0 ? amountBD : BigDecimal.ZERO),
-                        csvRecord.get("Category"),
-                        csvRecord.get("Merchant Name"));
-                accountStatements.add(accountStatement);
-            }
-
-            // sort accountStatements by date
-            accountStatements.sort((a, b) -> a.date.compareTo(b.date));
+            List<AccountStatement> accountStatements = prepareStatement(
+                    csvFormat.parse(new FileReader(transactionsFilePath.toFile(), StandardCharsets.UTF_8)));
 
             try (OutputStream outputStream = Files.newOutputStream(accountStatementFilePath);
                     Workbook workbook = new Workbook(outputStream, "account-statement", null)) {
@@ -76,9 +58,39 @@ public class AccountStatementService {
                     worksheet.value(i + 1, 6, accountStatement.merchantName);
                 }
             }
-        } catch (IOException | ParseException e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
+    }
 
+    List<AccountStatement> prepareStatement(Iterable<CSVRecord> csvRecords) {
+        List<AccountStatement> accountStatements = new ArrayList<>();
+        SimpleDateFormat dateFormat = new SimpleDateFormat("dd MMM yy", Locale.ENGLISH);
+
+        for (CSVRecord csvRecord : csvRecords) {
+            Date date;
+            try {
+                date = dateFormat.parse(csvRecord.get("Date"));
+            } catch (ParseException e) {
+                System.out.println("Invalid date format [" + csvRecord.get("Date") + "] for tranaction ["
+                        + csvRecord.get("Transaction Details") + "]");
+                date = new Date();
+            }
+
+            BigDecimal amountBD = new BigDecimal(csvRecord.get("Amount"));
+            AccountStatement accountStatement = new AccountStatement(date,
+                    csvRecord.get("Transaction Type"),
+                    csvRecord.get("Transaction Details"),
+                    (amountBD.signum() < 0 ? amountBD : BigDecimal.ZERO),
+                    (amountBD.signum() > 0 ? amountBD : BigDecimal.ZERO),
+                    csvRecord.get("Category"),
+                    csvRecord.get("Merchant Name"));
+            accountStatements.add(accountStatement);
+        }
+
+        // sort accountStatements by date
+        accountStatements.sort((a, b) -> a.date.compareTo(b.date));
+
+        return accountStatements;
     }
 }

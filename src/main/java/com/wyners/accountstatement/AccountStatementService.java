@@ -22,21 +22,20 @@ import java.util.Date;
 
 @Service
 public class AccountStatementService {
-    String[] HEADERS_ORIGINAL = { "Date", "Amount", "Account Number", "Empty", "Transaction Type",
-            "Transaction Details",
-            "Balance", "Category", "Merchant Name" };
-    private String[] HEADERS_NEW = { "Date", "Transaction Type", "Transaction Details", "Debit", "Credit", "Category",
-            "Merchant Name" };
+    private final String defaultCategory = "TBD";
+
+    String[] HEADERS_ORIGINAL = {"Date", "Amount", "Account Number", "Empty", "Transaction Type",
+            "Transaction Details", "Balance", "Category", "Merchant Name"};
+    private String[] HEADERS_NEW = {"Date", "Transaction Type", "Transaction Details", "Debit",
+            "Credit", "Category", "Merchant Name"};
 
     public void process(Path transactionsFilePath, Path accountStatementFilePath) {
-        CSVFormat csvFormat = CSVFormat.DEFAULT.builder()
-                .setHeader(HEADERS_ORIGINAL)
-                .setSkipHeaderRecord(true)
-                .build();
+        CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setHeader(HEADERS_ORIGINAL)
+                .setSkipHeaderRecord(true).build();
 
         try {
-            List<AccountStatement> accountStatements = prepareStatement(
-                    csvFormat.parse(new FileReader(transactionsFilePath.toFile(), StandardCharsets.UTF_8)));
+            List<AccountStatement> accountStatements = prepareStatement(csvFormat
+                    .parse(new FileReader(transactionsFilePath.toFile(), StandardCharsets.UTF_8)));
 
             try (OutputStream outputStream = Files.newOutputStream(accountStatementFilePath);
                     Workbook workbook = new Workbook(outputStream, "account-statement", null)) {
@@ -72,19 +71,20 @@ public class AccountStatementService {
             try {
                 date = dateFormat.parse(csvRecord.get("Date"));
             } catch (ParseException e) {
-                System.out.println("Invalid date format [" + csvRecord.get("Date") + "] for tranaction ["
-                        + csvRecord.get("Transaction Details") + "]");
+                System.out.println("Invalid date format [" + csvRecord.get("Date")
+                        + "] for tranaction [" + csvRecord.get("Transaction Details") + "]");
                 date = new Date();
             }
 
             BigDecimal amountBD = new BigDecimal(csvRecord.get("Amount"));
-            AccountStatement accountStatement = new AccountStatement(date,
-                    csvRecord.get("Transaction Type"),
-                    csvRecord.get("Transaction Details"),
-                    (amountBD.signum() < 0 ? amountBD : BigDecimal.ZERO),
-                    (amountBD.signum() > 0 ? amountBD : BigDecimal.ZERO),
-                    csvRecord.get("Category"),
-                    csvRecord.get("Merchant Name"));
+            AccountStatement accountStatement =
+                    new AccountStatement(date, csvRecord.get("Transaction Type"),
+                            csvRecord.get("Transaction Details"),
+                            (amountBD.signum() < 0 ? amountBD : BigDecimal.ZERO),
+                            (amountBD.signum() > 0 ? amountBD : BigDecimal.ZERO),
+                            getCategory(csvRecord.get("Transaction Details"),
+                                    csvRecord.get("Category"), csvRecord.get("Merchant Name")),
+                            csvRecord.get("Merchant Name"));
             accountStatements.add(accountStatement);
         }
 
@@ -92,5 +92,115 @@ public class AccountStatementService {
         accountStatements.sort((a, b) -> a.date.compareTo(b.date));
 
         return accountStatements;
+    }
+
+    String getCategory(String transactionDetails, String category, String merchantName) {
+        String newCategory;
+
+        switch (category) {
+            case "Transfers out":
+                newCategory = getCategoryForTransferOut(transactionDetails, category);
+                break;
+            case "Internal transfers":
+                newCategory = transactionDetails.contains("Salary") ? "Salary YJ" : defaultCategory;
+                break;
+            case "Transfers in":
+                newCategory =
+                        transactionDetails.contains("Sirius Business Wyners Pty Ltd") ? "Sirius"
+                                : defaultCategory;
+                break;
+            case "Bills":
+                newCategory = getCategoryForBills(category, merchantName);
+                break;
+            case "Shopping":
+                newCategory = getCategoryForShopping(transactionDetails, category, merchantName);
+                break;
+            case "Subscriptions":
+                newCategory = "Software";
+                break;
+            case "Financial":
+                newCategory = merchantName.equals("Australian Taxation Office") ? "ATO" : category;
+                break;
+            case "Food & drink":
+                newCategory = merchantName.equals("Crunchyroll") ? "Software" : "Business Meeting";
+                break;
+            case "Health":
+                newCategory = merchantName.equals("Parramatta City Tennis") ? "Business Meeting"
+                        : "Office Supply";
+                break;
+            case "Groceries":
+            case "Home":
+                newCategory = "Office Supply";
+                break;
+            case "Entertainment":
+                newCategory = "Business Meeting";
+                break;
+            case "Transport":
+            case "Travel":
+                newCategory = "Business Trip";
+                break;
+            case "Other Income":
+            case "Cash":
+            case "Services":
+            case "Uncategorised":
+            newCategory = defaultCategory;
+                break;
+            default:
+                newCategory = category;
+                break;
+        }
+
+        return newCategory;
+    }
+
+    private String getCategoryForTransferOut(String transactionDetails, String category) {
+        if (transactionDetails.contains("Salary")) {
+            return transactionDetails.replace("INTERNET TRANSFER ", "");
+        } else if (transactionDetails.contains("MB Financial")) {
+            return "Business Car";
+        } else {
+            return defaultCategory;
+        }
+    }
+
+    private String getCategoryForShopping(String transactionDetails, String category,
+            String merchantName) {
+        String newCategory;
+        switch (merchantName) {
+            case "Amazon Web Services":
+            case "Reckon":
+            case "Adobe Systems":
+                newCategory = "Software";
+                break;
+            case "Squre":
+                newCategory = "Business Meeting";
+                break;
+            default:
+                newCategory = "Office Supply";
+        }
+
+        return newCategory;
+    }
+
+    private String getCategoryForBills(String category, String merchantName) {
+        String newCategory;
+
+        switch (merchantName) {
+            case "QBE Insurance":
+            case "icare":
+                newCategory = "Business Insurance";
+                break;
+            case "Vodafone":
+                newCategory = "Mobile";
+                break;
+            case "Aussie Broadband":
+            case "Superloop":
+                newCategory = "Broadband";
+                break;
+            default:
+                newCategory = category;
+
+        }
+        return newCategory;
     }
 }

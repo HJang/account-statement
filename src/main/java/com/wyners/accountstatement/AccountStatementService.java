@@ -106,7 +106,7 @@ public class AccountStatementService {
                 break;
             case "Transfers in":
                 newCategory =
-                        transactionDetails.contains("Sirius Business Wyners Pty Ltd") ? "Sirius"
+                        transactionDetails.contains("Oncore Contract") ? "Oncore"
                                 : defaultCategory;
                 break;
             case "Bills":
